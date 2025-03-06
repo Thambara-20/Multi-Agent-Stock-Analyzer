@@ -2,3 +2,5 @@ yfinance
 langchain_core
 numpy
 pandas
+lxml
+python-dotenv

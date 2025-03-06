@@ -1,4 +1,4 @@
-from langchain.tools import tool
+from langchain_core.tools import tool
 import yfinance as yf
 
 @tool
@@ -13,6 +13,7 @@ def get_historical_prices(ticker: str, start_date: str, end_date: str, interval:
     """
     stock = yf.Ticker(ticker)
     data = stock.history(start=start_date, end=end_date, interval=interval)
+    print(data)
     return data.reset_index().to_dict(orient="records")
 
 
@@ -28,11 +29,9 @@ def get_volume_data(ticker: str, start_date: str, end_date: str, interval: str =
     """
     stock = yf.Ticker(ticker)
     data = stock.history(start=start_date, end=end_date, interval=interval)
+    data = data.reset_index()
     return data[["Date", "Volume"]].reset_index().to_dict(orient="records")
 
-
-import pandas as pd
-import numpy as np
 
 @tool
 def calculate_technical_indicators(ticker: str, start_date: str, end_date: str):
@@ -90,3 +89,5 @@ def get_intraday_data(ticker: str, start_date: str, end_date: str, interval: str
     stock = yf.Ticker(ticker)
     data = stock.history(start=start_date, end=end_date, interval=interval)
     return data.reset_index().to_dict(orient="records")
+
+

@@ -1,127 +1,180 @@
 import requests
 import logging
-from typing import List, Dict
-from dotenv import load_dotenv
-
-load_dotenv()
 import os
+from typing import List, Dict, Optional
+from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# API Keys (Replace with your actual keys)
-NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
-
-# //load dot Env
+# API Keys
+FMP_API_KEY = os.getenv("FMP_API_KEY", "your_fmp_api_key")
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "your_alpha_vantage_api_key")
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "your_polygon_api_key")
 
 
-# Fetch trending stocks for the day
-def get_top_stocks_alpha_vantage() -> List[str]:
-    """Fetches the top trending investable stocks in the US market for the current day."""
+class DataCollector:
+    def __init__(self):
+        self.base_urls = {
+            "fmp": "https://financialmodelingprep.com/api/v3",
+            "alpha": "https://www.alphavantage.co/query",
+            "polygon": "https://api.polygon.io/v2",
+        }
+        self.api_keys = {
+            "fmp": FMP_API_KEY,
+            "alpha": ALPHA_VANTAGE_API_KEY,
+            "polygon": POLYGON_API_KEY,
+        }
+
+    def fetch_data(
+        self, source: str, endpoint: str, params: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """Generic method to fetch data from different APIs."""
+        try:
+            if source not in self.base_urls:
+                logging.error(f"Unknown API source: {source}")
+                return None
+
+            url = f"{self.base_urls[source]}{endpoint}"
+            params = params or {}
+            if source in self.api_keys:
+                params["apiKey"] = self.api_keys[source]
+
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logging.error(f"HTTP Request Error fetching {endpoint} from {source}: {e}")
+            return None
+
+    def fetch_polygon_aggregates(self, ticker: str, date: str) -> Optional[Dict]:
+        """Fetch aggregated market data from Polygon.io for a given ticker and date."""
+        try:
+            url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{date}/{date}"
+            params = {"apiKey": self.api_keys["polygon"]}
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logging.error(
+                f"HTTP Request Error fetching aggregate data for {ticker} on {date}: {e}"
+            )
+            return None
+
+
+class GetNews:
+    """Class to fetch news from different sources without requiring an API key."""
+
+    @staticmethod
+    def fetch_reuters_news() -> List[Dict]:
+        """Fetch latest financial news from Reuters (without API key)."""
+        try:
+            url = "https://www.reuters.com/markets"
+            response = requests.get(url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            headlines = soup.find_all("h3", class_="story-title")
+            return [
+                {"source": "Reuters", "title": h.text.strip(), "url": url}
+                for h in headlines[:5]
+            ]
+        except requests.RequestException as e:
+            logging.error(f"Error fetching Reuters news: {e}")
+            return []
+
+    @staticmethod
+    def fetch_bbc_news() -> List[Dict]:
+        """Fetch latest financial news from BBC (without API key)."""
+        try:
+            url = "https://www.bbc.com/news/business"
+            response = requests.get(url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            headlines = soup.find_all("h3")
+            return [
+                {"source": "BBC", "title": h.text.strip(), "url": url}
+                for h in headlines[:5]
+            ]
+        except requests.RequestException as e:
+            logging.error(f"Error fetching BBC news: {e}")
+            return []
+
+    @staticmethod
+    def fetch_yahoo_finance_news() -> List[Dict]:
+        """Fetch latest financial news from Yahoo Finance (without API key)."""
+        try:
+            url = "https://finance.yahoo.com/news"
+            response = requests.get(url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            headlines = soup.find_all("h3")
+            return [
+                {"source": "Yahoo Finance", "title": h.text.strip(), "url": url}
+                for h in headlines[:5]
+            ]
+        except requests.RequestException as e:
+            logging.error(f"Error fetching Yahoo Finance news: {e}")
+            return []
+
+    @staticmethod
+    def fetch_marketwatch_news() -> List[Dict]:
+        """Fetch latest financial news from MarketWatch (without API key)."""
+        try:
+            url = "https://www.marketwatch.com/latest-news"
+            response = requests.get(url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            headlines = soup.find_all("h3")
+            return [
+                {"source": "MarketWatch", "title": h.text.strip(), "url": url}
+                for h in headlines[:5]
+            ]
+        except requests.RequestException as e:
+            logging.error(f"Error fetching MarketWatch news: {e}")
+            return []
+
+
+# Fetch news articles from multiple sources
+def get_free_news_articles() -> List[Dict]:
+    """Fetches recent and relevant news articles from various sources."""
+    collector = DataCollector()
     try:
-        url = f"https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey={ALPHA_VANTAGE_API_KEY}"
-        response = requests.get(url).json()
-        top_gainers = response.get("top_gainers", [])[:5]  # Limit to top 5 gainers
-        logging.info(f"Fetched top gainers: {top_gainers}")
-        return [stock["ticker"] for stock in top_gainers]
-    except Exception as e:
-        logging.error(f"Error fetching top stocks: {e}")
-        return []
-
-
-def get_top_gainers_financial_modeling() -> List[Dict]:
-    """Fetches the top gaining stocks in the US market for the current day."""
-    try:
-        url = "https://financialmodelingprep.com/api/v3/stock_market/gainers"
-        response = requests.get(url)
-        response.raise_for_status()  # Raise an error for bad status codes
-        top_gainers = response.json()[:5]  # Limit to top 5 gainers
-        logging.info(f"Fetched top gainers: {top_gainers}")
-        return top_gainers
-    except requests.RequestException as e:
-        logging.error(f"Error fetching top gainers: {e}")
-        return []
-
-
-# Fetch news articles related to a given stock
-def get_newsapi_articles(ticker: str) -> List[Dict]:
-    """Fetches recent and relevant news articles about a given stock ticker."""
-    try:
-        url = (
-            f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt"
-            f"&apiKey={NEWSAPI_KEY}"
+        polygon_news = collector.fetch_data("polygon", "/reference/news", {"limit": 10})
+        articles = (
+            [
+                {
+                    "source": article.get("publisher", {}).get("name", "Unknown"),
+                    "title": article.get("title", "No Title"),
+                    "url": article.get("article_url", "No URL"),
+                    "publishedAt": article.get("published_utc", "Unknown"),
+                }
+                for article in polygon_news.get("results", [])[:10]
+            ]
+            if polygon_news
+            else []
         )
-        response = requests.get(url).json()
-        logging.info(f"Fetched news for {ticker}: {response}")
-        articles = [
-            {
-                "source": article["source"]["name"],
-                "title": article["title"],
-                "url": article["url"],
-                "publishedAt": article["publishedAt"],
-            }
-            for article in response.get("articles", [])[:5]
-        ]  # Fetch top 5 articles
-        logging.info(f"Fetched {len(articles)} articles for {ticker}")
+
+        # Fetch non-API news
+        articles.extend(GetNews.fetch_reuters_news())
+        articles.extend(GetNews.fetch_bbc_news())
+        articles.extend(GetNews.fetch_yahoo_finance_news())
+        articles.extend(GetNews.fetch_marketwatch_news())
+
+        logging.info(f"Fetched {len(articles)} latest news articles")
         return articles
     except Exception as e:
-        logging.error(f"Error fetching news for {ticker}: {e}")
-        return []
-
-
-# Fetch sentiment-related data from Finnhub
-def get_finnhub_sentiment(ticker: str) -> Dict:
-    """Fetches sentiment-related financial news data from Finnhub."""
-    try:
-        url = f"https://finnhub.io/api/v1/news-sentiment?symbol={ticker}&token={FINNHUB_API_KEY}"
-        response = requests.get(url).json()
-        sentiment_data = {
-            "sentiment_score": response.get("companyNewsScore", 0),
-            "news_count": response.get("newsScore", 0),
-            "positive": response.get("positiveScore", 0),
-            "negative": response.get("negativeScore", 0),
-        }
-        logging.info(f"Fetched sentiment data for {ticker}: {sentiment_data}")
-        return sentiment_data
-    except Exception as e:
-        logging.error(f"Error fetching sentiment data for {ticker}: {e}")
-        return {}
-
-
-# Structure the collected data
-def collect_market_data() -> List[Dict]:
-    """Collects and structures data for the top trending stocks."""
-    try:
-        top_stocks_alpha_vantage = get_top_stocks_alpha_vantage()
-        # top_gainers_financial_modeling = get_top_gainers_financial_modeling()
-
-        structured_data = []
-
-        for stock in top_stocks_alpha_vantage:
-            news_articles = get_newsapi_articles(stock)
-            sentiment_data = get_finnhub_sentiment(stock)
-            structured_data.append(
-                {
-                    "ticker": stock,
-                    "news": news_articles,
-                    "sentiment_data": sentiment_data,
-                }
-            )
-
-        logging.info(f"Collected market data for {len(top_stocks)} stocks.")
-        return structured_data
-    except Exception as e:
-        logging.error(f"Error collecting market data: {e}")
+        logging.error(f"Unexpected Error fetching news articles: {e}")
         return []
 
 
 # Example Testing of the Data Collection Tool
 if __name__ == "__main__":
-    logging.info("Starting data collection for top investable stocks...")
-    market_data = collect_market_data()
-    logging.info(f"Final structured market data: {market_data}")
+    logging.info("Starting news collection...")
+    latest_news = get_free_news_articles()
+    logging.info(f"Final collected news data: {latest_news}")

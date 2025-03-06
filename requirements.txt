@@ -4,3 +4,6 @@ numpy
 pandas
 lxml
 python-dotenv
+langchain-groq
+langgraph
+langchain-community

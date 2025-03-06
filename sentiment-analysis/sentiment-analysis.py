@@ -1,180 +1,179 @@
 import requests
 import logging
 import os
-from typing import List, Dict, Optional
 from dotenv import load_dotenv
-from bs4 import BeautifulSoup
+from groq import Groq
 
-# Load environment variables
 load_dotenv()
 
-# Configure logging
+# ----------------------------------------------------------------------------
+# CONFIGURATION
+# ----------------------------------------------------------------------------
+
+FMP_API_KEY = os.getenv("FMP_API_KEY")
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# API Keys
-FMP_API_KEY = os.getenv("FMP_API_KEY", "your_fmp_api_key")
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "your_alpha_vantage_api_key")
-POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "your_polygon_api_key")
+# Initialize Groq Client
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# ----------------------------------------------------------------------------
+# FETCH TOP GAINERS (FMP)
+# ----------------------------------------------------------------------------
 
 
-class DataCollector:
-    def __init__(self):
-        self.base_urls = {
-            "fmp": "https://financialmodelingprep.com/api/v3",
-            "alpha": "https://www.alphavantage.co/query",
-            "polygon": "https://api.polygon.io/v2",
-        }
-        self.api_keys = {
-            "fmp": FMP_API_KEY,
-            "alpha": ALPHA_VANTAGE_API_KEY,
-            "polygon": POLYGON_API_KEY,
-        }
-
-    def fetch_data(
-        self, source: str, endpoint: str, params: Optional[Dict] = None
-    ) -> Optional[Dict]:
-        """Generic method to fetch data from different APIs."""
-        try:
-            if source not in self.base_urls:
-                logging.error(f"Unknown API source: {source}")
-                return None
-
-            url = f"{self.base_urls[source]}{endpoint}"
-            params = params or {}
-            if source in self.api_keys:
-                params["apiKey"] = self.api_keys[source]
-
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            logging.error(f"HTTP Request Error fetching {endpoint} from {source}: {e}")
-            return None
-
-    def fetch_polygon_aggregates(self, ticker: str, date: str) -> Optional[Dict]:
-        """Fetch aggregated market data from Polygon.io for a given ticker and date."""
-        try:
-            url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{date}/{date}"
-            params = {"apiKey": self.api_keys["polygon"]}
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            logging.error(
-                f"HTTP Request Error fetching aggregate data for {ticker} on {date}: {e}"
-            )
-            return None
-
-
-class GetNews:
-    """Class to fetch news from different sources without requiring an API key."""
-
-    @staticmethod
-    def fetch_reuters_news() -> List[Dict]:
-        """Fetch latest financial news from Reuters (without API key)."""
-        try:
-            url = "https://www.reuters.com/markets"
-            response = requests.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-            headlines = soup.find_all("h3", class_="story-title")
-            return [
-                {"source": "Reuters", "title": h.text.strip(), "url": url}
-                for h in headlines[:5]
-            ]
-        except requests.RequestException as e:
-            logging.error(f"Error fetching Reuters news: {e}")
-            return []
-
-    @staticmethod
-    def fetch_bbc_news() -> List[Dict]:
-        """Fetch latest financial news from BBC (without API key)."""
-        try:
-            url = "https://www.bbc.com/news/business"
-            response = requests.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-            headlines = soup.find_all("h3")
-            return [
-                {"source": "BBC", "title": h.text.strip(), "url": url}
-                for h in headlines[:5]
-            ]
-        except requests.RequestException as e:
-            logging.error(f"Error fetching BBC news: {e}")
-            return []
-
-    @staticmethod
-    def fetch_yahoo_finance_news() -> List[Dict]:
-        """Fetch latest financial news from Yahoo Finance (without API key)."""
-        try:
-            url = "https://finance.yahoo.com/news"
-            response = requests.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-            headlines = soup.find_all("h3")
-            return [
-                {"source": "Yahoo Finance", "title": h.text.strip(), "url": url}
-                for h in headlines[:5]
-            ]
-        except requests.RequestException as e:
-            logging.error(f"Error fetching Yahoo Finance news: {e}")
-            return []
-
-    @staticmethod
-    def fetch_marketwatch_news() -> List[Dict]:
-        """Fetch latest financial news from MarketWatch (without API key)."""
-        try:
-            url = "https://www.marketwatch.com/latest-news"
-            response = requests.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, "html.parser")
-            headlines = soup.find_all("h3")
-            return [
-                {"source": "MarketWatch", "title": h.text.strip(), "url": url}
-                for h in headlines[:5]
-            ]
-        except requests.RequestException as e:
-            logging.error(f"Error fetching MarketWatch news: {e}")
-            return []
-
-
-# Fetch news articles from multiple sources
-def get_free_news_articles() -> List[Dict]:
-    """Fetches recent and relevant news articles from various sources."""
-    collector = DataCollector()
+def fetch_top_gainers_from_fmp(limit: int = 10):
+    """
+    Fetch the top gainers from Financial Modeling Prep.
+    """
+    url = "https://financialmodelingprep.com/api/v3/stock_market/gainers"
+    params = {"apikey": FMP_API_KEY}
     try:
-        polygon_news = collector.fetch_data("polygon", "/reference/news", {"limit": 10})
-        articles = (
-            [
-                {
-                    "source": article.get("publisher", {}).get("name", "Unknown"),
-                    "title": article.get("title", "No Title"),
-                    "url": article.get("article_url", "No URL"),
-                    "publishedAt": article.get("published_utc", "Unknown"),
-                }
-                for article in polygon_news.get("results", [])[:10]
-            ]
-            if polygon_news
-            else []
-        )
-
-        # Fetch non-API news
-        articles.extend(GetNews.fetch_reuters_news())
-        articles.extend(GetNews.fetch_bbc_news())
-        articles.extend(GetNews.fetch_yahoo_finance_news())
-        articles.extend(GetNews.fetch_marketwatch_news())
-
-        logging.info(f"Fetched {len(articles)} latest news articles")
-        return articles
-    except Exception as e:
-        logging.error(f"Unexpected Error fetching news articles: {e}")
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return [item.get("symbol", "Unknown") for item in data[:limit]]
+    except requests.RequestException as e:
+        logging.error(f"Error fetching top gainers from FMP: {e}")
         return []
 
 
-# Example Testing of the Data Collection Tool
+# ----------------------------------------------------------------------------
+# FETCH NEWS FOR SPECIFIC STOCK SYMBOLS (NEWSAPI)
+# ----------------------------------------------------------------------------
+
+
+def fetch_stock_news(ticker: str, limit: int = 5):
+    """
+    Fetch news related to a specific stock ticker from NewsAPI.
+    """
+    url = "https://newsapi.org/v2/everything"
+    params = {
+        "apiKey": NEWSAPI_KEY,
+        "q": ticker,
+        "language": "en",
+        "pageSize": limit,
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return [
+            {
+                "title": art.get("title", "No title"),
+                "url": art.get("url", ""),
+                "source": art.get("source", {}).get("name", "Unknown"),
+                "ticker": ticker,
+            }
+            for art in data.get("articles", [])
+            if art.get("title")
+        ]
+    except requests.RequestException as e:
+        logging.error(f"Error fetching news for {ticker}: {e}")
+        return []
+
+
+# ----------------------------------------------------------------------------
+# SENTIMENT ANALYSIS WITH WEIGHTING (GROQ)
+# ----------------------------------------------------------------------------
+
+
+def analyze_sentiment_groq(text: str, source: str):
+    """
+    Perform sentiment analysis using Groq API and apply weighting.
+    """
+    if not client:
+        logging.error(
+            "GROQ_API_KEY is not set. Sentiment analysis cannot be performed."
+        )
+        return {"sentiment": "unknown", "confidence": 0.0}
+
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Analyze the sentiment of the given text.",
+                },
+                {"role": "user", "content": text},
+            ],
+            model="llama-3.3-70b-versatile",
+            stream=False,
+        )
+        sentiment = (
+            chat_completion.choices[0].message.content
+            if chat_completion.choices
+            else "unknown"
+        )
+        confidence = 1.0  # Assuming a default confidence value
+
+        # Weighting based on source credibility
+        weight_factors = {
+            "Bloomberg": 1.2,
+            "Reuters": 1.1,
+            "Yahoo Finance": 1.0,
+            "Unknown": 0.8,
+        }
+        weight = weight_factors.get(source, 0.9)
+        adjusted_confidence = round(confidence * weight, 2)
+
+        return {
+            "sentiment": sentiment,
+            "confidence": adjusted_confidence,
+        }
+    except Exception as e:
+        logging.error(f"Error calling Groq sentiment API: {e}")
+        return {"sentiment": "unknown", "confidence": 0.0}
+
+
+# ----------------------------------------------------------------------------
+# ORCHESTRATION FUNCTION
+# ----------------------------------------------------------------------------
+
+
+def perform_market_research():
+    """
+    Fetch top gainers, fetch news for those stocks, analyze sentiment, and return results.
+    """
+    logging.info("Starting market research...")
+    top_gainers = fetch_top_gainers_from_fmp(limit=10)
+
+    all_news_articles = []
+    for ticker in top_gainers:
+        stock_news = fetch_stock_news(ticker, limit=3)  # Get news for each stock
+        all_news_articles.extend(stock_news)
+
+    analyzed_news = [
+        {**article, **analyze_sentiment_groq(article["title"], article["source"])}
+        for article in all_news_articles
+    ]
+
+    result = {"top_gainers": top_gainers, "analyzed_news": analyzed_news}
+    logging.info("Market research completed.")
+    return result
+
+
+# ----------------------------------------------------------------------------
+# DEMO USAGE
+# ----------------------------------------------------------------------------
 if __name__ == "__main__":
-    logging.info("Starting news collection...")
-    latest_news = get_free_news_articles()
-    logging.info(f"Final collected news data: {latest_news}")
+    final_data = perform_market_research()
+
+    print("=== TOP GAINERS ===")
+    for symbol in final_data["top_gainers"]:
+        print(f" - {symbol}")
+
+    print("\n=== NEWS & SENTIMENT ===")
+    for item in final_data["analyzed_news"]:
+        print(
+            f"Ticker: {item['ticker']}\n"
+            f"Title: {item['title']}\n"
+            f"Source: {item['source']}\n"
+            f"URL: {item['url']}\n"
+            f"Sentiment: {item['sentiment']}, Confidence: {item['confidence']}\n"
+            "---"
+        )

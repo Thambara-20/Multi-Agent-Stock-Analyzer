@@ -7,3 +7,5 @@ langchain_community
 langchain_fmp_data
 polygon-api-client
 requests
+lxml
+python-dotenv

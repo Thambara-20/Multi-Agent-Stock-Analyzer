@@ -1,19 +1,41 @@
+import time
 from langchain_core.tools import tool
 import yfinance as yf
+from functools import lru_cache
+
+# Dictionary to cache stock data to avoid multiple API calls
+stock_data_cache = {}
+
+
+def fetch_stock_data(ticker: str, start_date: str, end_date: str, interval: str = "1d", cache_duration=3600):
+    """
+    Fetch stock data only once per ticker for the given time period.
+    Cache expires after `cache_duration` seconds.
+    """
+    cache_key = f"{ticker}_{start_date}_{end_date}_{interval}"
+    current_time = time.time()
+
+    # Check if data exists and is still valid
+    if cache_key in stock_data_cache:
+        cached_time, data = stock_data_cache[cache_key]
+        if current_time - cached_time < cache_duration:
+            return data  # Use cached data
+
+    # Fetch new data and update cache
+    stock = yf.Ticker(ticker)
+    data = stock.history(start=start_date, end=end_date, interval=interval)
+    stock_data_cache[cache_key] = (current_time, data)
+    
+    return data
+
+
 
 @tool
 def get_historical_prices(ticker: str, start_date: str, end_date: str, interval: str = "1d"):
     """
     Fetch historical OHLC price data for a given stock.
-    :param ticker: Stock symbol (e.g., 'AAPL').
-    :param start_date: Start date (YYYY-MM-DD).
-    :param end_date: End date (YYYY-MM-DD).
-    :param interval: Data interval ('1d', '1h', '5m', etc.).
-    :return: DataFrame with historical prices.
     """
-    stock = yf.Ticker(ticker)
-    data = stock.history(start=start_date, end=end_date, interval=interval)
-    print(data)
+    data = fetch_stock_data(ticker, start_date, end_date, interval)
     return data.reset_index().to_dict(orient="records")
 
 
@@ -21,29 +43,17 @@ def get_historical_prices(ticker: str, start_date: str, end_date: str, interval:
 def get_volume_data(ticker: str, start_date: str, end_date: str, interval: str = "1d"):
     """
     Fetch trading volume data for a given stock.
-    :param ticker: Stock symbol (e.g., 'AAPL').
-    :param start_date: Start date (YYYY-MM-DD).
-    :param end_date: End date (YYYY-MM-DD).
-    :param interval: Data interval ('1d', '1h', '5m', etc.).
-    :return: DataFrame with volume data.
     """
-    stock = yf.Ticker(ticker)
-    data = stock.history(start=start_date, end=end_date, interval=interval)
-    data = data.reset_index()
-    return data[["Date", "Volume"]].reset_index().to_dict(orient="records")
+    data = fetch_stock_data(ticker, start_date, end_date, interval)
+    return data[["Volume"]].reset_index().to_dict(orient="records")
 
 
 @tool
 def calculate_technical_indicators(ticker: str, start_date: str, end_date: str):
     """
     Calculate technical indicators for a stock.
-    :param ticker: Stock symbol (e.g., 'AAPL').
-    :param start_date: Start date (YYYY-MM-DD).
-    :param end_date: End date (YYYY-MM-DD).
-    :return: Dictionary with calculated indicators.
     """
-    stock = yf.Ticker(ticker)
-    data = stock.history(start=start_date, end=end_date)
+    data = fetch_stock_data(ticker, start_date, end_date)
 
     # Moving Averages
     data["MA_50"] = data["Close"].rolling(window=50).mean()
@@ -80,14 +90,15 @@ def calculate_technical_indicators(ticker: str, start_date: str, end_date: str):
 def get_intraday_data(ticker: str, start_date: str, end_date: str, interval: str = "5m"):
     """
     Fetch intraday price and volume data.
-    :param ticker: Stock symbol (e.g., 'AAPL').
-    :param start_date: Start date (YYYY-MM-DD).
-    :param end_date: End date (YYYY-MM-DD).
-    :param interval: Intraday interval ('1m', '5m', '15m', '1h').
-    :return: DataFrame with intraday price and volume.
     """
-    stock = yf.Ticker(ticker)
-    data = stock.history(start=start_date, end=end_date, interval=interval)
+    data = fetch_stock_data(ticker, start_date, end_date, interval)
     return data.reset_index().to_dict(orient="records")
 
 
+parmas = {
+    "ticker": "AAPL",
+    "start_date": "2020-01-01",
+    "end_date": "2021-01-01"
+}
+
+print(get_intraday_data(parmas))

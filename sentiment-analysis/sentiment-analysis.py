@@ -1,59 +1,127 @@
 import requests
+import logging
 from typing import List, Dict
-from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
+import os
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # API Keys (Replace with your actual keys)
-NEWSAPI_KEY = "5708ae6f4c0f45b3adfedc0d387dab5c"
-GROQ_API_KEY = "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"
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
-# Initialize Groq Client
-groq_client = Groq(api_key=GROQ_API_KEY)
-
-
-# 1. Fetch News Data from NewsAPI
-def get_newsapi_articles(ticker: str) -> List[Dict]:
-    url = (
-        f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt"
-        f"&apiKey={NEWSAPI_KEY}"
-    )
-    response = requests.get(url).json()
-    return response.get("articles", [])[:10]  # Fetch up to 10 latest news articles
+# //load dot Env
 
 
-def analyze_sentiment(news_articles: List[Dict]) -> Dict[str, float]:
-    """Analyzes sentiment of news headlines using Groq and provides an aggregated sentiment score."""
-    if not news_articles:
-        return {"positive": 0, "negative": 0, "neutral": 1}
-
-    headlines = "\n".join([article["title"] for article in news_articles])
-    prompt = (
-        "Analyze the sentiment of the following financial news headlines. "
-        "Provide percentages for positive, negative, and neutral sentiments:\n\n"
-        f"{headlines}\n\n"
-        "Respond strictly in JSON format like:\n"
-        '{"positive": 0.7, "negative": 0.2, "neutral": 0.1}'
-    )
-
-    completion = groq_client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}], model="llama3-8b-8192"
-    )
-
-    sentiment_json = completion.choices[0].message.content.strip()
+# Fetch trending stocks for the day
+def get_top_stocks_alpha_vantage() -> List[str]:
+    """Fetches the top trending investable stocks in the US market for the current day."""
     try:
-        sentiment = eval(sentiment_json)  # Convert JSON response into dict
-        return sentiment
-    except:
-        return {"positive": 0, "negative": 0, "neutral": 1}
+        url = f"https://www.alphavantage.co/query?function=TOP_GAINERS_LOSERS&apikey={ALPHA_VANTAGE_API_KEY}"
+        response = requests.get(url).json()
+        top_gainers = response.get("top_gainers", [])[:5]  # Limit to top 5 gainers
+        logging.info(f"Fetched top gainers: {top_gainers}")
+        return [stock["ticker"] for stock in top_gainers]
+    except Exception as e:
+        logging.error(f"Error fetching top stocks: {e}")
+        return []
 
 
-# Example Testing of the Sentiment Analysis Tool
+def get_top_gainers_financial_modeling() -> List[Dict]:
+    """Fetches the top gaining stocks in the US market for the current day."""
+    try:
+        url = "https://financialmodelingprep.com/api/v3/stock_market/gainers"
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an error for bad status codes
+        top_gainers = response.json()[:5]  # Limit to top 5 gainers
+        logging.info(f"Fetched top gainers: {top_gainers}")
+        return top_gainers
+    except requests.RequestException as e:
+        logging.error(f"Error fetching top gainers: {e}")
+        return []
+
+
+# Fetch news articles related to a given stock
+def get_newsapi_articles(ticker: str) -> List[Dict]:
+    """Fetches recent and relevant news articles about a given stock ticker."""
+    try:
+        url = (
+            f"https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt"
+            f"&apiKey={NEWSAPI_KEY}"
+        )
+        response = requests.get(url).json()
+        logging.info(f"Fetched news for {ticker}: {response}")
+        articles = [
+            {
+                "source": article["source"]["name"],
+                "title": article["title"],
+                "url": article["url"],
+                "publishedAt": article["publishedAt"],
+            }
+            for article in response.get("articles", [])[:5]
+        ]  # Fetch top 5 articles
+        logging.info(f"Fetched {len(articles)} articles for {ticker}")
+        return articles
+    except Exception as e:
+        logging.error(f"Error fetching news for {ticker}: {e}")
+        return []
+
+
+# Fetch sentiment-related data from Finnhub
+def get_finnhub_sentiment(ticker: str) -> Dict:
+    """Fetches sentiment-related financial news data from Finnhub."""
+    try:
+        url = f"https://finnhub.io/api/v1/news-sentiment?symbol={ticker}&token={FINNHUB_API_KEY}"
+        response = requests.get(url).json()
+        sentiment_data = {
+            "sentiment_score": response.get("companyNewsScore", 0),
+            "news_count": response.get("newsScore", 0),
+            "positive": response.get("positiveScore", 0),
+            "negative": response.get("negativeScore", 0),
+        }
+        logging.info(f"Fetched sentiment data for {ticker}: {sentiment_data}")
+        return sentiment_data
+    except Exception as e:
+        logging.error(f"Error fetching sentiment data for {ticker}: {e}")
+        return {}
+
+
+# Structure the collected data
+def collect_market_data() -> List[Dict]:
+    """Collects and structures data for the top trending stocks."""
+    try:
+        top_stocks_alpha_vantage = get_top_stocks_alpha_vantage()
+        # top_gainers_financial_modeling = get_top_gainers_financial_modeling()
+
+        structured_data = []
+
+        for stock in top_stocks_alpha_vantage:
+            news_articles = get_newsapi_articles(stock)
+            sentiment_data = get_finnhub_sentiment(stock)
+            structured_data.append(
+                {
+                    "ticker": stock,
+                    "news": news_articles,
+                    "sentiment_data": sentiment_data,
+                }
+            )
+
+        logging.info(f"Collected market data for {len(top_stocks)} stocks.")
+        return structured_data
+    except Exception as e:
+        logging.error(f"Error collecting market data: {e}")
+        return []
+
+
+# Example Testing of the Data Collection Tool
 if __name__ == "__main__":
-    ticker = "AAPL"
-
-    print("\n--- Fetching News from NewsAPI ---")
-    newsapi_articles = get_newsapi_articles(ticker)
-    print(newsapi_articles)
-
-    print("\n--- Performing Sentiment Analysis on NewsAPI Articles ---")
-    newsapi_sentiment = analyze_sentiment(newsapi_articles)
-    print(newsapi_sentiment)
+    logging.info("Starting data collection for top investable stocks...")
+    market_data = collect_market_data()
+    logging.info(f"Final structured market data: {market_data}")

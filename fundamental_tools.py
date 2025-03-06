@@ -90,10 +90,3 @@ class FinancialFundamentalsTool(BaseTool):
         financial_data['Payout_Ratio'] = stock.info.get('payoutRatio', None)
 
         return financial_data
-
-
-# Example Usage
-if __name__ == "__main__":
-    financial_tool = FinancialFundamentalsTool()
-    company_data = financial_tool._run("AAPL")  # Example for Apple Inc.
-    print(company_data)

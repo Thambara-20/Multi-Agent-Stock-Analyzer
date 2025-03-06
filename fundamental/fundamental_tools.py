@@ -89,4 +89,4 @@ def get_fundamental_analysis(company_ticker: str):
 
 
 # no need to create graph. I only need to check using this print statement
-print(get_fundamental_analysis.invoke("AAPL"))
+# print(get_fundamental_analysis.invoke("AAPL"))

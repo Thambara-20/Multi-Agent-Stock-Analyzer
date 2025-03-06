@@ -2,3 +2,8 @@ yfinance
 langchain_core
 numpy
 pandas
+
+langchain_community
+langchain_fmp_data
+polygon-api-client
+requests

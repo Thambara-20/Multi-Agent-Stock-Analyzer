@@ -26,7 +26,7 @@ client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 # ----------------------------------------------------------------------------
 
 
-def fetch_top_gainers_from_fmp(limit: int = 5):
+def fetch_top_gainers_from_fmp(limit: int = 10):
     """
     Fetch the top gainers from Financial Modeling Prep.
     """
@@ -43,19 +43,19 @@ def fetch_top_gainers_from_fmp(limit: int = 5):
 
 
 # ----------------------------------------------------------------------------
-# FETCH NEWS (NEWSAPI)
+# FETCH NEWS FOR SPECIFIC STOCK SYMBOLS (NEWSAPI)
 # ----------------------------------------------------------------------------
 
 
-def fetch_business_news(limit: int = 5):
+def fetch_stock_news(ticker: str, limit: int = 5):
     """
-    Fetch US business news from NewsAPI.
+    Fetch news related to a specific stock ticker from NewsAPI.
     """
-    url = "https://newsapi.org/v2/top-headlines"
+    url = "https://newsapi.org/v2/everything"
     params = {
         "apiKey": NEWSAPI_KEY,
-        "category": "business",
-        "country": "us",
+        "q": ticker,
+        "language": "en",
         "pageSize": limit,
     }
     try:
@@ -67,23 +67,24 @@ def fetch_business_news(limit: int = 5):
                 "title": art.get("title", "No title"),
                 "url": art.get("url", ""),
                 "source": art.get("source", {}).get("name", "Unknown"),
+                "ticker": ticker,
             }
             for art in data.get("articles", [])
             if art.get("title")
         ]
     except requests.RequestException as e:
-        logging.error(f"Error fetching news from NewsAPI: {e}")
+        logging.error(f"Error fetching news for {ticker}: {e}")
         return []
 
 
 # ----------------------------------------------------------------------------
-# SENTIMENT ANALYSIS (GROQ)
+# SENTIMENT ANALYSIS WITH WEIGHTING (GROQ)
 # ----------------------------------------------------------------------------
 
 
-def analyze_sentiment_groq(text: str):
+def analyze_sentiment_groq(text: str, source: str):
     """
-    Perform sentiment analysis using Groq API.
+    Perform sentiment analysis using Groq API and apply weighting.
     """
     if not client:
         logging.error(
@@ -108,10 +109,22 @@ def analyze_sentiment_groq(text: str):
             if chat_completion.choices
             else "unknown"
         )
+        confidence = 1.0  # Assuming a default confidence value
+
+        # Weighting based on source credibility
+        weight_factors = {
+            "Bloomberg": 1.2,
+            "Reuters": 1.1,
+            "Yahoo Finance": 1.0,
+            "Unknown": 0.8,
+        }
+        weight = weight_factors.get(source, 0.9)
+        adjusted_confidence = round(confidence * weight, 2)
+
         return {
             "sentiment": sentiment,
-            "confidence": 1.0,
-        }  # Assuming confidence is not provided
+            "confidence": adjusted_confidence,
+        }
     except Exception as e:
         logging.error(f"Error calling Groq sentiment API: {e}")
         return {"sentiment": "unknown", "confidence": 0.0}
@@ -124,15 +137,19 @@ def analyze_sentiment_groq(text: str):
 
 def perform_market_research():
     """
-    Fetch top gainers, fetch news, analyze sentiment, and return results.
+    Fetch top gainers, fetch news for those stocks, analyze sentiment, and return results.
     """
     logging.info("Starting market research...")
-    top_gainers = fetch_top_gainers_from_fmp(limit=5)
-    news_articles = fetch_business_news(limit=5)
+    top_gainers = fetch_top_gainers_from_fmp(limit=10)
+
+    all_news_articles = []
+    for ticker in top_gainers:
+        stock_news = fetch_stock_news(ticker, limit=3)  # Get news for each stock
+        all_news_articles.extend(stock_news)
 
     analyzed_news = [
-        {**article, **analyze_sentiment_groq(article["title"])}
-        for article in news_articles
+        {**article, **analyze_sentiment_groq(article["title"], article["source"])}
+        for article in all_news_articles
     ]
 
     result = {"top_gainers": top_gainers, "analyzed_news": analyzed_news}
@@ -153,6 +170,7 @@ if __name__ == "__main__":
     print("\n=== NEWS & SENTIMENT ===")
     for item in final_data["analyzed_news"]:
         print(
+            f"Ticker: {item['ticker']}\n"
             f"Title: {item['title']}\n"
             f"Source: {item['source']}\n"
             f"URL: {item['url']}\n"
